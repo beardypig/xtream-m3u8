@@ -1,11 +1,10 @@
-service: xtream-m3u8
+service: xtream-iptv-proxy
 
-frameworkVersion: '2'
+frameworkVersion: '3'
 
 provider:
   name: aws
   runtime: python3.8
-  lambdaHashingVersion: 20201221
   stage: prod
   region: eu-west-2
   memorySize: 128
@@ -19,13 +18,15 @@ functions:
     handler: wsgi_handler.handler
     events:
       - http: ANY /
-      - http: ANY {proxy+}
+      - http: ANY /{proxy+}
 
 custom:
   wsgi:
     app: server.app
     pythonBin: python3
     packRequirements: false
+    textMimeTypes:
+      - application/x-mpegURL
 
   pythonRequirements:
     dockerizePip: non-linux

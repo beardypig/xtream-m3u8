@@ -45,10 +45,13 @@ def playlist():
     filter_category = request.args.get("category")
     client = xc_client_from_req()
 
+    if client.get_user_info()['user_info']['auth'] == 0:
+        abort(401)
+
     categories = {c["category_id"]: c["category_name"] for c in client.get_live_categories()}
 
     filtered = [ch for ch in filter_channels(client.get_live_streams()) if
-                filter_category is None or categories.get(ch["category_id"]).lower().startswith(filter_category.lower())]
+                filter_category is None or categories.get(ch["category_id"], 'Unknown').lower().startswith(filter_category.lower())]
 
     for channel in filtered:
         if not channel["epg_channel_id"]:
@@ -68,6 +71,7 @@ def playlist():
     ]
 
     response = make_response(render_template("playlist.m3u8", channels=channels))
+    response.mimetype = "application/x-mpegURL"
 
     return response
 
@@ -117,6 +121,7 @@ def timeshift_playlist():
     ]
 
     response = make_response(render_template("playlist.m3u8", channels=channels))
+    response.mimetype = "application/x-mpegURL"
 
     return response
 
@@ -130,11 +135,3 @@ def timeshift_channel(stream):
 
     client = xc_client_from_req()
     return redirect(client.timeshift_url(stream, shift))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", default=5060, type=int, help="PORT to run webservice on", metavar="PORT")
-    parser.add_argument("--reload", action="store_true", help="Reload new files in dev mode")
-
-    args = parser.parse_args()
