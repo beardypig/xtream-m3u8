@@ -1,13 +1,40 @@
 import logging
-import argparse
+import uuid
+
+import boto3
 
 from flask import Flask, abort, redirect, render_template, request, make_response, url_for
 
 from pyxtream.client import Client
 from pyxtream.connection import Connection
+from botocore.exceptions import ClientError
 
 log = logging.getLogger(__name__)
 app = Flask(__name__)
+
+
+def create_presigned_url(bucket_name, object_name, expiration=3600):
+    """Generate a presigned URL to share an S3 object
+
+    :param bucket_name: string
+    :param object_name: string
+    :param expiration: Time in seconds for the presigned URL to remain valid
+    :return: Presigned URL as string. If error, returns None.
+    """
+
+    # Generate a presigned URL for the S3 object
+    s3_client = boto3.client('s3')
+    try:
+        response = s3_client.generate_presigned_url('get_object',
+                                                    Params={'Bucket': bucket_name,
+                                                            'Key': object_name},
+                                                    ExpiresIn=expiration)
+    except ClientError as e:
+        logging.error(e)
+        return None
+
+    # The response contains the presigned URL
+    return response
 
 
 def filter_channels(channels):
@@ -70,7 +97,7 @@ def playlist():
         for channel in filtered
     ]
 
-    response = make_response(render_template("playlist.m3u8", channels=channels))
+    response = make_response(render_template("playlist.m3u8.tmpl", channels=channels))
     response.mimetype = "application/x-mpegURL"
 
     return response
@@ -90,6 +117,7 @@ def timeshift_playlist():
         shift = int(request.args.get("shift", "1"))
     except ValueError:
         abort(400, "invalid shift value")
+        return
 
     client = xc_client_from_req()
     categories = {c["category_id"]: c["category_name"] for c in client.get_live_categories()}
@@ -120,10 +148,14 @@ def timeshift_playlist():
         for channel in channels
     ]
 
-    response = make_response(render_template("playlist.m3u8", channels=channels))
-    response.mimetype = "application/x-mpegURL"
+    # render to a file and copy to s3
+    output = render_template("playlist.m3u8.tmpl", channels=channels)
 
-    return response
+    s3 = boto3.resource("s3")
+    outpath = f"m3u8/{uuid.uuid4().hex}.m3u8"
+    s3.Bucket("iptv-m3u8").put_object(Key=outpath, Body="application/x-mpegURL")
+
+    return redirect(create_presigned_url("iptv-m3u8", outpath))
 
 
 @app.route("/xc/timeshift/<stream>.ts")
